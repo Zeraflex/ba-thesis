@@ -1,0 +1,779 @@
+---
+title: "BA Thesis"
+author: "Raphael Meisser"
+format: html
+editor: source
+---
+
+```{r}
+#| label: libraries & setup
+#| warning: false
+#| message: false
+#| error: false
+
+library(readr)
+library(tidyverse)
+library(openxlsx)
+library(devtools)
+library(countrycode)
+library(plm)
+library(texreg)
+library(stargazer)
+library(sandwich)
+library(tseries)
+library(lmtest)
+library(summarytools)
+library(car)
+library(refugees)
+library(wbstats)
+library(GGally)
+library(Hmisc)
+setwd("C:/Users/rapha/OneDrive/Administrativ/Studium/UZH/Bachelor/FS24/Polito/BA Thesis")
+```
+
+
+# Data Import
+
+```{r}
+#| label: importing final data
+#| message: false
+
+# Raw final data
+df_final <- readRDS("df_final.RDS")
+
+# Standardized and normalized final data
+df_final_sn <- readRDS("df_final_sn.RDS")
+```
+
+
+# Descriptive Statistics
+
+```{r}
+#| label: descriptive statistics
+#| message: false
+#| warning: false
+
+# correlation matrix
+df_final_sn%>%
+  select(cbie_index, populist, refugee_share, gini, 
+         growth, unemployment_rate, gov_ineffectiveness, inflation) %>%
+  ggpairs(lower = list(continuous = wrap("smooth", method = "lm", se = F, color = "#845EAD")))
+
+# Descriptive Statistics Stargazer table
+df_descriptive <- df_final %>%
+  select(iso3c, year, v2x_regime_amb, populist, cbie_index, gov_effectiveness, gini, 
+         growth, unemployment_rate, refugee_share, inflation)
+
+stargazer(df_descriptive, 
+          type = "latex", 
+          title = "Summary statistics",
+          label = "summary_statistics",
+          font.size = "small")
+
+```
+
+
+# Yearly Averages Data
+
+```{r}
+#| label: yearly averages
+#| message: false
+
+# grouped by year
+df_year_averages <- df_final %>%
+  group_by(year) %>%
+  summarise(avg_vote_share = mean(populist, na.rm = T),
+            avg_cbi_score = mean(cbie_index, na.rm = T),
+            avg_migrantshare = mean(migrantshare, na.rm = T),
+            avg_migrantchange = mean(migrantchange, na.rm = T),
+            avg_gini = mean(gini, na.rm = T),
+            avg_growth = mean(growth, na.rm = T),
+            avg_inflation = mean(inflation, na.rm = T, trim = 0.1),
+            avg_globalization = mean(kof_gi, na.rm = T),
+            avg_tradeopenness = mean(trade_openness, na.rm = T),
+            avg_gdppc = mean(gdp_pc, na.rm = T),
+            avg_unemployment = mean(unemployment_rate, na.rm = T),
+            avg_refugee_share = mean(refugee_share, na.rm = T))
+
+# grouped by year and region
+df_year_averages_region <- df_final %>%
+  group_by(year, region) %>%
+  summarise(avg_vote_share = mean(populist, na.rm = T),
+            avg_cbi_score = mean(cbie_index, na.rm = T),
+            avg_migrantshare = mean(migrantshare, na.rm = T),
+            avg_migrantchange = mean(migrantchange, na.rm = T),
+            avg_gini = mean(gini, na.rm = T),
+            avg_growth = mean(growth, na.rm = T),
+            avg_inflation = mean(inflation, na.rm = T, trim = 0.1),
+            avg_globalization = mean(kof_gi, na.rm = T),
+            avg_tradeopenness = mean(trade_openness, na.rm = T),
+            avg_gdppc = mean(gdp_pc, na.rm = T),
+            avg_unemployment = mean(unemployment_rate, na.rm = T),
+            avg_refugee_share = mean(refugee_share, na.rm = T))
+
+df_year_averages_region <- df_year_averages_region %>%
+  mutate(region = case_match(
+    region,
+    1 ~ "Europe",
+    2 ~ "Asia",
+    3 ~ "Latin America"
+  ))
+```
+
+
+# Figures
+
+```{r}
+#| layout-ncol: 2
+#| label: Figures
+
+# average populism across regions over time
+df_year_averages_region %>%
+  ggplot(aes(x = year, y = avg_vote_share)) +
+  geom_line(aes(color=region), color = "black") +
+  facet_wrap(~region) +
+  theme_classic() +
+  labs(x = "Year",
+       y = "Populist vote share") +
+  scale_x_continuous(breaks = seq(1990, 2020, by = 15)) +
+  theme(panel.spacing.x = unit(20, "points"))
+
+# average cbi index across all countries over time
+df_year_averages %>%
+  ggplot(aes(x = year, y = avg_cbi_score)) +
+  geom_line(linewidth = 0.75) +
+  theme_classic() +
+  labs(x = "Year",
+       y = "CBI Index")
+
+# average populist vote share across all countries over time
+df_year_averages %>%
+  ggplot(aes(x = year, y = avg_vote_share)) +
+  geom_line(linewidth = 0.75) +
+  theme_classic() +
+  labs(x = "Year",
+       y = "Populist party vote share")
+
+# Line Plot CBI evolution for each country
+df_final %>%
+  ggplot(aes(x = year, y = cbie_index)) +
+  geom_line(aes(color=iso3c), color = "black") +
+  facet_wrap(~iso3c) +
+  theme_classic() +
+  labs(x = "Year",
+       y = "CBI Index") +
+  scale_x_continuous(breaks = seq(1990, 2020, by = 15)) +
+  scale_y_continuous(breaks = seq(0, 1, by = 0.3)) +
+  theme(panel.spacing.x = unit(20, "points"))
+
+# Line Plot populist party vote share for each country
+df_final %>%
+  ggplot(aes(x = year, y = populist)) +
+  geom_line(aes(color=iso3c), color = "black") +
+  facet_wrap(~iso3c) +
+  theme_classic() +
+  labs(x = "Year",
+       y = "Populist vote share") +
+  scale_x_continuous(breaks = seq(1990, 2020, by = 15)) +
+  scale_y_continuous(breaks = seq(0, 100, by = 50)) +
+  theme(panel.spacing.x = unit(20, "points"))
+```
+
+
+# Pooled OLS
+
+```{r}
+#| label: Pooled OLS
+
+# Plotting a simple pooled OLS
+df_final %>%
+  ggplot(aes(x=cbie_index, y=populist)) +
+  geom_point(color = "darkgrey") +
+  geom_smooth(method = "lm", formula = y ~ x, color = "black") +
+  theme_classic() +
+  labs(x = "Central Bank Independence",
+       y = "Populist Party Vote Share")
+```
+
+
+# FE Models and ME Plots full data
+
+```{r}
+#| label: Regressions for full data
+
+# model 2: Additive model
+reg_fe_2 <- plm(populist ~ lag(populist, 1) + crisis2008 + crisis2015 + cbie_index + gov_ineffectiveness + 
+                  gini + unemployment_rate + growth + refugee_share + lag(inflation, 1), 
+                data = df_final_sn, model = "within", effect = "twoways")
+
+pcdtest(reg_fe_2, test = c("lm"))
+pbgtest(reg_fe_2)
+
+model.2 <- summary(reg_fe_2, vcov = function(x) vcovHC(x, method="arellano", type="HC1", cluster="time"))
+model.2.sg <- coeftest(reg_fe_2, vcov = function(x) vcovHC(x, method="arellano", type="HC1", cluster="time"))
+
+
+# model 2a: Interaction CBI * GI
+reg_fe_int2a <- plm(populist ~ lag(populist, 1) + crisis2008 + crisis2015 + cbie_index * gov_ineffectiveness + 
+                      gini + unemployment_rate + growth + refugee_share + lag(inflation, 1), 
+                  data = df_final_sn, model = "within", effect = "twoways")
+
+pcdtest(reg_fe_int2a, test = c("lm"))
+pbgtest(reg_fe_int2a)
+
+model.2a <- summary(reg_fe_int2a, vcov = function(x) vcovHC(x, method="arellano", type="HC1", cluster="time"))
+model.2a.sg <- coeftest(reg_fe_int2a, vcov = function(x) vcovHC(x, method="arellano", type="HC1", cluster="time"))
+
+
+# model 2b: Interaction CBI * growth
+reg_fe_int2b <- plm(populist ~ lag(populist, 1) + crisis2008 + crisis2015 + gov_ineffectiveness + 
+                      gini + unemployment_rate + cbie_index * growth + refugee_share + lag(inflation, 1), 
+                    data = df_final_sn, model = "within", effect = "twoways")
+
+pcdtest(reg_fe_int2b, test = c("lm"))
+pbgtest(reg_fe_int2b)
+
+model.2b <- summary(reg_fe_int2b, vcov = function(x) vcovHC(x, method="arellano", type="HC1", cluster="time"))
+model.2b.sg <- coeftest(reg_fe_int2b, vcov = function(x) vcovHC(x, method="arellano", type="HC1", cluster="time"))
+
+
+# model 2c: Interaction CBI * gini
+reg_fe_int2c <- plm(populist ~ lag(populist, 1) + crisis2008 + crisis2015 + gov_ineffectiveness + 
+                      cbie_index * gini + unemployment_rate + growth + refugee_share + lag(inflation, 1), 
+                    data = df_final_sn, model = "within", effect = "twoways")
+
+pcdtest(reg_fe_int2c, test = c("lm"))
+pbgtest(reg_fe_int2c)
+
+model.2c <- summary(reg_fe_int2c, vcov = function(x) vcovHC(x, method="arellano", type="HC1", cluster="time"))
+model.2c.sg <- coeftest(reg_fe_int2c, vcov = function(x) vcovHC(x, method="arellano", type="HC1", cluster="time"))
+
+
+# model 2d: Interaction CBI * unemployment rate
+reg_fe_int2d <- plm(populist ~ lag(populist, 1) + crisis2008 + crisis2015 + gov_ineffectiveness + 
+                      gini + cbie_index * unemployment_rate + growth + refugee_share + lag(inflation, 1), 
+                    data = df_final_sn, model = "within", effect = "twoways")
+
+pcdtest(reg_fe_int2d, test = c("lm"))
+pbgtest(reg_fe_int2d)
+
+model.2d <- summary(reg_fe_int2d, vcov = function(x) vcovHC(x, method="arellano", type="HC1", cluster="time"))
+model.2d.sg <- coeftest(reg_fe_int2d, vcov = function(x) vcovHC(x, method="arellano", type="HC1", cluster="time"))
+
+
+# model 2e: Interaction CBI * inflation
+reg_fe_int2e <- plm(populist ~ lag(populist, 1) + crisis2008 + crisis2015 + gov_ineffectiveness + 
+                      gini + unemployment_rate + growth + refugee_share + lag(cbie_index, 1) * lag(inflation, 1), 
+                    data = df_final_sn, model = "within", effect = "twoways")
+
+pcdtest(reg_fe_int2e, test = c("lm"))
+pbgtest(reg_fe_int2e)
+
+model.2e <- summary(reg_fe_int2e, vcov = function(x) vcovHC(x, method="arellano", type="HC1", cluster="time"))
+model.2e.sg <- coeftest(reg_fe_int2e, vcov = function(x) vcovHC(x, method="arellano", type="HC1", cluster="time"))
+
+
+# Regression table
+stargazer(model.2.sg, model.2a.sg, model.2b.sg, model.2c.sg, model.2d.sg, 
+          type = "latex", 
+          title = "2-way FE Models, Full Data, DV = Populist vote share",
+          label = "full_data",
+          column.labels = c("Model 1", "Model 2", "Model 3", "Model 4", "Model 5"),
+          omit.table.layout = "#",
+          font.size = "footnotesize",
+          style = "ajps",
+          add.lines = list(
+            c("N", "571", "571", "571", "571", "571", "571"), # retrieved from summary()
+            c("R$^{2}$","0.54604", "0.54854", "0.54769", "0.5477", "0.54607"),
+            c("Adj. R$^{2}$","0.48963", "0.49144", "0.49048", "0.49049", "0.48866")
+          ))
+
+
+```
+
+```{r}
+#| label: conditional effect plots full data
+
+# Model 2a
+# Beta estimates
+beta.hat.2a <- model.2a$coefficients[, "Estimate"]
+vcov.2a <- vcov(model.2a)
+
+# picking 1000 values for gov_ineffectiveness
+z0 <- seq(min(df_final_sn$gov_ineffectiveness, na.rm = T), max(df_final_sn$gov_ineffectiveness, na.rm = T), length.out = 1000)
+dy.dx.2a <- beta.hat.2a["cbie_index"] + beta.hat.2a["cbie_index:gov_ineffectiveness"] * z0
+
+# SE for the 1000 values
+se.dy.dx.2a <- sqrt(vcov.2a["cbie_index", "cbie_index"] +
+                    (z0^2)*vcov.2a["cbie_index:gov_ineffectiveness","cbie_index:gov_ineffectiveness"] +
+                    2*z0*vcov.2a["cbie_index", "cbie_index:gov_ineffectiveness"])
+
+# CI
+upr.2a <- dy.dx.2a + 1.96*se.dy.dx.2a
+lwr.2a <- dy.dx.2a - 1.96*se.dy.dx.2a
+
+# figure
+figure.2a <- ggplot(data=NULL) +
+  labs(x="Governmental Ineffectiveness Index", y="Conditional Effects") +
+  geom_line(aes(z0, dy.dx.2a), size = 1) +
+  geom_hline(yintercept=0, size = 1, linetype=3) +
+  geom_ribbon(aes(x=z0, y=dy.dx.2a, ymin=lwr.2a, ymax=upr.2a), alpha=0.3) +
+  theme_classic()
+figure.2a
+
+
+# Model 2b
+beta.hat.2b <- model.2b$coefficients[, "Estimate"]
+vcov.2b <- vcov(model.2b)
+
+z0 <- seq(min(df_final_sn$growth, na.rm = T), max(df_final_sn$growth, na.rm = T), length.out = 1000)
+dy.dx.2b <- beta.hat.2b["cbie_index"] + beta.hat.2b["cbie_index:growth"] * z0
+
+se.dy.dx.2b <- sqrt(vcov.2b["cbie_index", "cbie_index"] +
+                      (z0^2)*vcov.2b["cbie_index:growth","cbie_index:growth"] +
+                      2*z0*vcov.2b["cbie_index", "cbie_index:growth"])
+
+upr.2b <- dy.dx.2b + 1.96*se.dy.dx.2b
+lwr.2b <- dy.dx.2b - 1.96*se.dy.dx.2b
+
+figure.2b <- ggplot(data=NULL) +
+  labs(x="Economic Growth", y="Conditional Effects") +
+  geom_line(aes(z0, dy.dx.2b), size = 1) +
+  geom_hline(yintercept=0, size = 1, linetype=3) +
+  geom_ribbon(aes(x=z0, y=dy.dx.2b, ymin=lwr.2b, ymax=upr.2b), alpha=0.3) +
+  theme_classic()
+figure.2b
+
+
+# Model 2c
+beta.hat.2c <- model.2c$coefficients[, "Estimate"]
+vcov.2c <- vcov(model.2c)
+
+z0 <- seq(min(df_final_sn$gini, na.rm = T), max(df_final_sn$gini, na.rm = T), length.out = 1000)
+dy.dx.2c <- beta.hat.2c["cbie_index"] + beta.hat.2c["cbie_index:gini"] * z0
+
+se.dy.dx.2c <- sqrt(vcov.2c["cbie_index", "cbie_index"] +
+                      (z0^2)*vcov.2c["cbie_index:gini","cbie_index:gini"] +
+                      2*z0*vcov.2c["cbie_index", "cbie_index:gini"])
+
+upr.2c <- dy.dx.2c + 1.96*se.dy.dx.2c
+lwr.2c <- dy.dx.2c - 1.96*se.dy.dx.2c
+
+figure.2c <- ggplot(data=NULL) +
+  labs(x="Gini Coefficient", y="Conditional Effects") +
+  geom_line(aes(z0, dy.dx.2c), size = 1) +
+  geom_hline(yintercept=0, size = 1, linetype=3) +
+  geom_ribbon(aes(x=z0, y=dy.dx.2c, ymin=lwr.2c, ymax=upr.2c), alpha=0.3) +
+  theme_classic()
+figure.2c
+
+
+# Model 2d
+beta.hat.2d <- model.2d$coefficients[, "Estimate"]
+vcov.2d <- vcov(model.2d)
+
+z0 <- seq(min(df_final_sn$unemployment_rate, na.rm = T), max(df_final_sn$unemployment_rate, na.rm = T), length.out = 1000)
+dy.dx.2d <- beta.hat.2d["cbie_index"] + beta.hat.2d["cbie_index:unemployment_rate"] * z0
+
+se.dy.dx.2d <- sqrt(vcov.2d["cbie_index", "cbie_index"] +
+                      (z0^2)*vcov.2d["cbie_index:unemployment_rate","cbie_index:unemployment_rate"] +
+                      2*z0*vcov.2d["cbie_index", "cbie_index:unemployment_rate"])
+
+upr.2d <- dy.dx.2d + 1.96*se.dy.dx.2d
+lwr.2d <- dy.dx.2d - 1.96*se.dy.dx.2d
+
+figure.2d <- ggplot(data=NULL) +
+  labs(x="Unemployment Rate", y="Conditional Effects") +
+  geom_line(aes(z0, dy.dx.2d), size = 1) +
+  geom_hline(yintercept=0, size = 1, linetype=3) +
+  geom_ribbon(aes(x=z0, y=dy.dx.2d, ymin=lwr.2d, ymax=upr.2d), alpha=0.3) +
+  theme_classic()
+figure.2d
+```
+
+
+## Validity Tests for FE Models
+
+```{r}
+#| label: Validity tests
+
+# Testing for Fixed Effects (Hausmann-Test)
+reg_re <- plm(populist ~ lag(populist, 1) + crisis2008 + crisis2015 + cbie_index + gov_ineffectiveness + 
+                  gini + unemployment_rate + growth + refugee_share + lag(inflation, 1), 
+                data = df_final_sn, model = "random", effect = "twoways")
+phtest(reg_fe_2, reg_re)
+
+# Testing for serial correlation (H0 = no serial correlation)
+pwartest(reg_fe_2)
+pbgtest(reg_fe_2)
+
+# Testing for heteroskedasticity (H0 = homoskedasticity)
+bptest(reg_fe_2, data = df_final_sn, studentize = F)
+```
+
+
+# Subsets of the data
+
+```{r}
+#| label: Subgroups
+
+# Latin America
+df_lam <- df_final_sn %>%
+  filter(region == 3)
+
+# Countries ruled by a populist president at least once
+df_poppres <- df_final_sn %>%
+  group_by(iso3c) %>%
+  filter(any(populistpres == 1)) %>%
+  ungroup()
+```
+
+
+# FE Models and ME Plots Latin America
+
+```{r}
+#| label: Regressions for Latin America
+
+# model 3: Additive model
+reg_fe_3 <- plm(populist ~ lag(populist, 1) + crisis2008 + crisis2015 + cbie_index + gov_ineffectiveness + 
+                  gini + unemployment_rate + growth + refugee_share + lag(inflation, 1), 
+                data = df_lam, model = "within", effect = "twoways")
+
+model.3 <- summary(reg_fe_3, vcov = function(x) vcovHC(x, method="arellano", type="HC1", cluster="time"))
+model.3.sg <- coeftest(reg_fe_3, vcov = function(x) vcovHC(x, method="arellano", type="HC1", cluster="time"))
+
+
+# model 3a: Interaction CBI * GI
+reg_fe_int3a <- plm(populist ~ lag(populist, 1) + crisis2008 + crisis2015 + cbie_index * gov_ineffectiveness + 
+                      gini + unemployment_rate + growth + refugee_share + lag(inflation, 1), 
+                  data = df_lam, model = "within", effect = "twoways")
+
+model.3a <- summary(reg_fe_int3a, vcov = function(x) vcovHC(x, method="arellano", type="HC1", cluster="time"))
+model.3a.sg <- coeftest(reg_fe_int3a, vcov = function(x) vcovHC(x, method="arellano", type="HC1", cluster="time"))
+
+
+# model 3b: Interaction CBI * growth
+reg_fe_int3b <- plm(populist ~ lag(populist, 1) + crisis2008 + crisis2015 + gov_ineffectiveness + 
+                      gini + unemployment_rate + cbie_index * growth + refugee_share + lag(inflation, 1), 
+                    data = df_lam, model = "within", effect = "twoways")
+
+model.3b <- summary(reg_fe_int3b, vcov = function(x) vcovHC(x, method="arellano", type="HC1", cluster="time"))
+model.3b.sg <- coeftest(reg_fe_int3b, vcov = function(x) vcovHC(x, method="arellano", type="HC1", cluster="time"))
+
+
+# model 3c: Interaction CBI * gini
+reg_fe_int3c <- plm(populist ~ lag(populist, 1) + crisis2008 + crisis2015 + gov_ineffectiveness + 
+                      cbie_index * gini + unemployment_rate + growth + refugee_share + lag(inflation, 1), 
+                    data = df_lam, model = "within", effect = "twoways")
+
+model.3c <- summary(reg_fe_int3c, vcov = function(x) vcovHC(x, method="arellano", type="HC1", cluster="time"))
+model.3c.sg <- coeftest(reg_fe_int3c, vcov = function(x) vcovHC(x, method="arellano", type="HC1", cluster="time"))
+
+
+# model 3d: Interaction CBI * unemployment rate
+reg_fe_int3d <- plm(populist ~ lag(populist, 1) + crisis2008 + crisis2015 + gov_ineffectiveness + 
+                      gini + cbie_index * unemployment_rate + growth + refugee_share + lag(inflation, 1), 
+                    data = df_lam, model = "within", effect = "twoways")
+
+model.3d <- summary(reg_fe_int3d, vcov = function(x) vcovHC(x, method="arellano", type="HC1", cluster="time"))
+model.3d.sg <- coeftest(reg_fe_int3d, vcov = function(x) vcovHC(x, method="arellano", type="HC1", cluster="time"))
+
+
+# model 3e: Interaction CBI * inflation
+reg_fe_int3e <- plm(populist ~ lag(populist, 1) + crisis2008 + crisis2015 + gov_ineffectiveness + 
+                      gini + unemployment_rate + growth + refugee_share + cbie_index * inflation, 
+                    data = df_lam, model = "within", effect = "twoways")
+
+model.3e <- summary(reg_fe_int3e, vcov = function(x) vcovHC(x, method="arellano", type="HC1", cluster="time"))
+model.3e.sg <- coeftest(reg_fe_int3e, vcov = function(x) vcovHC(x, method="arellano", type="HC1", cluster="time"))
+
+
+# Regression table
+stargazer(model.3.sg, model.3a.sg, model.3b.sg, model.3c.sg, model.3d.sg, 
+          type = "latex", 
+          title = "2-way FE Models, Latin America, DV = Populist vote share",
+          label = "latinamerica",
+          column.labels = c("Model 6", "Model 7", "Model 8", "Model 9", "Model 10"),
+          omit.table.layout = "#",
+          font.size = "footnotesize",
+          style = "ajps",
+          add.lines = list(
+            c("N", "91", "91", "91", "91", "91"),
+            c("R$^{2}$","0.6821", "0.68225", "0.69353", "0.52445", "0.68903"),
+            c("Adj. R$^{2}$","0.51506", "0.50694", "0.52445", "0.52445", "0.51745")
+          ))
+```
+
+```{r}
+#| label: conditional effect plots Latin America
+
+# Model 3a
+# Beta estimates
+beta.hat.3a <- model.3a$coefficients[, "Estimate"]
+vcov.3a <- vcov(model.3a)
+
+# picking 1000 values for gov_ineffectiveness
+z0 <- seq(min(df_lam$gov_ineffectiveness, na.rm = T), max(df_lam$gov_ineffectiveness, na.rm = T), length.out = 1000)
+dy.dx.3a <- beta.hat.3a["cbie_index"] + beta.hat.3a["cbie_index:gov_ineffectiveness"] * z0
+
+# SE for the 1000 values
+se.dy.dx.3a <- sqrt(vcov.3a["cbie_index", "cbie_index"] +
+                      (z0^2)*vcov.3a["cbie_index:gov_ineffectiveness","cbie_index:gov_ineffectiveness"] +
+                      2*z0*vcov.3a["cbie_index", "cbie_index:gov_ineffectiveness"])
+
+# CI
+upr.3a <- dy.dx.3a + 1.96*se.dy.dx.3a
+lwr.3a <- dy.dx.3a - 1.96*se.dy.dx.3a
+
+# figure
+figure.3a <- ggplot(data=NULL) +
+  labs(x="Governmental Ineffectiveness Index", y="Conditional Effects") +
+  geom_line(aes(z0, dy.dx.3a), size = 1) +
+  geom_hline(yintercept=0, size = 1, linetype=3) +
+  geom_ribbon(aes(x=z0, y=dy.dx.3a, ymin=lwr.3a, ymax=upr.3a), alpha=0.3) +
+  theme_classic()
+figure.3a
+
+
+# Model 3b
+beta.hat.3b <- model.3b$coefficients[, "Estimate"]
+vcov.3b <- vcov(model.3b)
+
+z0 <- seq(min(df_lam$growth, na.rm = T), max(df_lam$growth, na.rm = T), length.out = 1000)
+dy.dx.3b <- beta.hat.3b["cbie_index"] + beta.hat.3b["cbie_index:growth"] * z0
+
+se.dy.dx.3b <- sqrt(vcov.3b["cbie_index", "cbie_index"] +
+                      (z0^2)*vcov.3b["cbie_index:growth","cbie_index:growth"] +
+                      2*z0*vcov.3b["cbie_index", "cbie_index:growth"])
+
+upr.3b <- dy.dx.3b + 1.96*se.dy.dx.3b
+lwr.3b <- dy.dx.3b - 1.96*se.dy.dx.3b
+
+figure.3b <- ggplot(data=NULL) +
+  labs(x="Economic Growth", y="Conditional Effects") +
+  geom_line(aes(z0, dy.dx.3b), size = 1) +
+  geom_hline(yintercept=0, size = 1, linetype=3) +
+  geom_ribbon(aes(x=z0, y=dy.dx.3b, ymin=lwr.3b, ymax=upr.3b), alpha=0.3) +
+  theme_classic()
+figure.3b
+
+
+# Model 3c
+beta.hat.3c <- model.3c$coefficients[, "Estimate"]
+vcov.3c <- vcov(model.3c)
+
+z0 <- seq(min(df_lam$gini, na.rm = T), max(df_lam$gini, na.rm = T), length.out = 1000)
+dy.dx.3c <- beta.hat.3c["cbie_index"] + beta.hat.3c["cbie_index:gini"] * z0
+
+se.dy.dx.3c <- sqrt(vcov.3c["cbie_index", "cbie_index"] +
+                      (z0^2)*vcov.3c["cbie_index:gini","cbie_index:gini"] +
+                      2*z0*vcov.3c["cbie_index", "cbie_index:gini"])
+
+upr.3c <- dy.dx.3c + 1.96*se.dy.dx.3c
+lwr.3c <- dy.dx.3c - 1.96*se.dy.dx.3c
+
+figure.3c <- ggplot(data=NULL) +
+  labs(x="Gini Coefficient", y="Conditional Effects") +
+  geom_line(aes(z0, dy.dx.3c), size = 1) +
+  geom_hline(yintercept=0, size = 1, linetype=3) +
+  geom_ribbon(aes(x=z0, y=dy.dx.3c, ymin=lwr.3c, ymax=upr.3c), alpha=0.3) +
+  theme_classic()
+figure.3c
+
+
+# Model 3d
+beta.hat.3d <- model.3d$coefficients[, "Estimate"]
+vcov.3d <- vcov(model.3d)
+
+z0 <- seq(min(df_lam$unemployment_rate, na.rm = T), max(df_lam$unemployment_rate, na.rm = T), length.out = 1000)
+dy.dx.3d <- beta.hat.3d["cbie_index"] + beta.hat.3d["cbie_index:unemployment_rate"] * z0
+
+se.dy.dx.3d <- sqrt(vcov.3d["cbie_index", "cbie_index"] +
+                      (z0^2)*vcov.3d["cbie_index:unemployment_rate","cbie_index:unemployment_rate"] +
+                      2*z0*vcov.3d["cbie_index", "cbie_index:unemployment_rate"])
+
+upr.3d <- dy.dx.3d + 1.96*se.dy.dx.3d
+lwr.3d <- dy.dx.3d - 1.96*se.dy.dx.3d
+
+figure.3d <- ggplot(data=NULL) +
+  labs(x="Unemployment Rate", y="Conditional Effects") +
+  geom_line(aes(z0, dy.dx.3d), size = 1) +
+  geom_hline(yintercept=0, size = 1, linetype=3) +
+  geom_ribbon(aes(x=z0, y=dy.dx.3d, ymin=lwr.3d, ymax=upr.3d), alpha=0.3) +
+  theme_classic()
+figure.3d
+```
+
+
+# FE Models and ME Plots populist presidency
+
+```{r}
+#| label: Regressions for Populist presidency
+
+# model 5: Additive model
+reg_fe_5 <- plm(populist ~ lag(populist, 1) + crisis2008 + crisis2015 + cbie_index + gov_ineffectiveness + 
+                  gini + unemployment_rate + growth + refugee_share + lag(inflation, 1), 
+                data = df_poppres, model = "within", effect = "twoways")
+
+model.5 <- summary(reg_fe_5, vcov = function(x) vcovHC(x, method="arellano", type="HC1", cluster="time"))
+model.5.sg <- coeftest(reg_fe_5, vcov = function(x) vcovHC(x, method="arellano", type="HC1", cluster="time"))
+
+
+# model 5a: Interaction CBI * GI
+reg_fe_int5a <- plm(populist ~ lag(populist, 1) + crisis2008 + crisis2015 + cbie_index * gov_ineffectiveness + 
+                      gini + unemployment_rate + growth + refugee_share + lag(inflation, 1), 
+                  data = df_poppres, model = "within", effect = "twoways")
+
+model.5a <- summary(reg_fe_int5a, vcov = function(x) vcovHC(x, method="arellano", type="HC1", cluster="time"))
+model.5a.sg <- coeftest(reg_fe_int5a, vcov = function(x) vcovHC(x, method="arellano", type="HC1", cluster="time"))
+
+
+# model 5b: Interaction CBI * growth
+reg_fe_int5b <- plm(populist ~ lag(populist, 1) + crisis2008 + crisis2015 + gov_ineffectiveness + 
+                      gini + unemployment_rate + cbie_index * growth + refugee_share + lag(inflation, 1), 
+                    data = df_poppres, model = "within", effect = "twoways")
+
+model.5b <- summary(reg_fe_int5b, vcov = function(x) vcovHC(x, method="arellano", type="HC1", cluster="time"))
+model.5b.sg <- coeftest(reg_fe_int5b, vcov = function(x) vcovHC(x, method="arellano", type="HC1", cluster="time"))
+
+
+# model 5c: Interaction CBI * gini
+reg_fe_int5c <- plm(populist ~ lag(populist, 1) + crisis2008 + crisis2015 + gov_ineffectiveness + 
+                      cbie_index * gini + unemployment_rate + growth + refugee_share + lag(inflation, 1), 
+                    data = df_poppres, model = "within", effect = "twoways")
+
+model.5c <- summary(reg_fe_int5c, vcov = function(x) vcovHC(x, method="arellano", type="HC1", cluster="time"))
+model.5c.sg <- coeftest(reg_fe_int5c, vcov = function(x) vcovHC(x, method="arellano", type="HC1", cluster="time"))
+
+
+# model 5d: Interaction CBI * unemployment rate
+reg_fe_int5d <- plm(populist ~ lag(populist, 1) + crisis2008 + crisis2015 + gov_ineffectiveness + 
+                      gini + cbie_index * unemployment_rate + growth + refugee_share + lag(inflation, 1), 
+                    data = df_poppres, model = "within", effect = "twoways")
+
+model.5d <- summary(reg_fe_int5d, vcov = function(x) vcovHC(x, method="arellano", type="HC1", cluster="time"))
+model.5d.sg <- coeftest(reg_fe_int5d, vcov = function(x) vcovHC(x, method="arellano", type="HC1", cluster="time"))
+
+
+# Regression table
+stargazer(model.5.sg, model.5a.sg, model.5b.sg, model.5c.sg, model.5d.sg, 
+          type = "latex", 
+          title = "2-way FE Models, populist presidency, DV = Populist vote share",
+          label = "populist_presidency",
+          column.labels = c("Model 11", "Model 12", "Model 13", "Model 14", "Model 15"),
+          omit.table.layout = "#",
+          font.size = "footnotesize",
+          style = "ajps",
+          add.lines = list(
+            c("N", "194", "194", "194", "194", "194"),
+            c("R$^{2}$","0.58307", "0.58866", "0.58341", "0.59703", "0.58323"),
+            c("Adj. R$^{2}$","0.48085", "0.48448", "0.47791", "0.49498", "0.47769")
+          ))
+```
+
+```{r}
+#| label: Conditional effect plots Populist Presidency
+
+# Model 5a
+# Beta estimates
+beta.hat.5a <- model.5a$coefficients[, "Estimate"]
+vcov.5a <- vcov(model.5a)
+
+# picking 1000 values for gov_ineffectiveness
+z0 <- seq(min(df_poppres$gov_ineffectiveness, na.rm = T), max(df_poppres$gov_ineffectiveness, na.rm = T), length.out = 1000)
+dy.dx.5a <- beta.hat.5a["cbie_index"] + beta.hat.5a["cbie_index:gov_ineffectiveness"] * z0
+
+# SE for the 1000 values
+se.dy.dx.5a <- sqrt(vcov.5a["cbie_index", "cbie_index"] +
+                      (z0^2)*vcov.5a["cbie_index:gov_ineffectiveness","cbie_index:gov_ineffectiveness"] +
+                      2*z0*vcov.5a["cbie_index", "cbie_index:gov_ineffectiveness"])
+
+# CI
+upr.5a <- dy.dx.5a + 1.96*se.dy.dx.5a
+lwr.5a <- dy.dx.5a - 1.96*se.dy.dx.5a
+
+# figure
+figure.5a <- ggplot(data=NULL) +
+  labs(x="Governmental Ineffectiveness Index", y="Conditional Effects") +
+  geom_line(aes(z0, dy.dx.5a), size = 1) +
+  geom_hline(yintercept=0, size = 1, linetype=3) +
+  geom_ribbon(aes(x=z0, y=dy.dx.5a, ymin=lwr.5a, ymax=upr.5a), alpha=0.3) +
+  theme_classic()
+figure.5a
+
+
+# Model 5b
+beta.hat.5b <- model.5b$coefficients[, "Estimate"]
+vcov.5b <- vcov(model.5b)
+
+z0 <- seq(min(df_poppres$growth, na.rm = T), max(df_poppres$growth, na.rm = T), length.out = 1000)
+dy.dx.5b <- beta.hat.5b["cbie_index"] + beta.hat.5b["cbie_index:growth"] * z0
+
+se.dy.dx.5b <- sqrt(vcov.5b["cbie_index", "cbie_index"] +
+                      (z0^2)*vcov.5b["cbie_index:growth","cbie_index:growth"] +
+                      2*z0*vcov.5b["cbie_index", "cbie_index:growth"])
+
+upr.5b <- dy.dx.5b + 1.96*se.dy.dx.5b
+lwr.5b <- dy.dx.5b - 1.96*se.dy.dx.5b
+
+figure.5b <- ggplot(data=NULL) +
+  labs(x="Economic Growth", y="Conditional Effects") +
+  geom_line(aes(z0, dy.dx.5b), size = 1) +
+  geom_hline(yintercept=0, size = 1, linetype=3) +
+  geom_ribbon(aes(x=z0, y=dy.dx.5b, ymin=lwr.5b, ymax=upr.5b), alpha=0.3) +
+  theme_classic()
+figure.5b
+
+
+# Model 5c
+beta.hat.5c <- model.5c$coefficients[, "Estimate"]
+vcov.5c <- vcov(model.5c)
+
+z0 <- seq(min(df_poppres$gini, na.rm = T), max(df_poppres$gini, na.rm = T), length.out = 1000)
+dy.dx.5c <- beta.hat.5c["cbie_index"] + beta.hat.5c["cbie_index:gini"] * z0
+
+se.dy.dx.5c <- sqrt(vcov.5c["cbie_index", "cbie_index"] +
+                      (z0^2)*vcov.5c["cbie_index:gini","cbie_index:gini"] +
+                      2*z0*vcov.5c["cbie_index", "cbie_index:gini"])
+
+upr.5c <- dy.dx.5c + 1.96*se.dy.dx.5c
+lwr.5c <- dy.dx.5c - 1.96*se.dy.dx.5c
+
+figure.5c <- ggplot(data=NULL) +
+  labs(x="Gini Coefficient", y="Conditional Effects") +
+  geom_line(aes(z0, dy.dx.5c), size = 1) +
+  geom_hline(yintercept=0, size = 1, linetype=3) +
+  geom_ribbon(aes(x=z0, y=dy.dx.5c, ymin=lwr.5c, ymax=upr.5c), alpha=0.3) +
+  theme_classic()
+figure.5c
+
+
+# Model 5d
+beta.hat.5d <- model.5d$coefficients[, "Estimate"]
+vcov.5d <- vcov(model.5d)
+
+z0 <- seq(min(df_poppres$unemployment_rate, na.rm = T), max(df_poppres$unemployment_rate, na.rm = T), length.out = 1000)
+dy.dx.5d <- beta.hat.5d["cbie_index"] + beta.hat.5d["cbie_index:unemployment_rate"] * z0
+
+se.dy.dx.5d <- sqrt(vcov.5d["cbie_index", "cbie_index"] +
+                      (z0^2)*vcov.5d["cbie_index:unemployment_rate","cbie_index:unemployment_rate"] +
+                      2*z0*vcov.5d["cbie_index", "cbie_index:unemployment_rate"])
+
+upr.5d <- dy.dx.5d + 1.96*se.dy.dx.5d
+lwr.5d <- dy.dx.5d - 1.96*se.dy.dx.5d
+
+figure.5d <- ggplot(data=NULL) +
+  labs(x="Unemployment Rate", y="Conditional Effects") +
+  geom_line(aes(z0, dy.dx.5d), size = 1) +
+  geom_hline(yintercept=0, size = 1, linetype=3) +
+  geom_ribbon(aes(x=z0, y=dy.dx.5d, ymin=lwr.5d, ymax=upr.5d), alpha=0.3) +
+  theme_classic()
+figure.5d
+```
+
+
+
+
+
+
+
